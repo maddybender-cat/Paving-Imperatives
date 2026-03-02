@@ -498,6 +498,7 @@ Appropriate call‑to‑action items will be generated automatically for any cri
       <div class="actions">
         <button id="resetBtn" class="btn outline">Reset</button>
         <button id="exportBtn" class="btn">Export Summary</button>
+        <button id="exportCsvBtn" class="btn outline">Download CSV</button>
       </div>
     </div>
   </section>
@@ -1311,13 +1312,103 @@ Appropriate call‑to‑action items will be generated automatically for any cri
       updateGlobalUI();
     }
   }
+  
+// ===== CSV EXPORT (criteria, earned score, possible score) =====
+
+// Escape fields safely for CSV
+function csvEscape(value) {
+  // Ensure string, escape quotes by doubling, wrap in quotes
+  return '"' + String(value).replace(/"/g, '""') + '"';
+}
+
+// Build the export rows by reading the live UI
+function collectExportRows(options) {
+  var opts = Object.assign({ scoredOnly: false }, options || {});
+  var rows = [];
+
+  // Walk every item card that exists in the DOM
+  CONFIG.categories.forEach(function(cat) {
+    cat.items.forEach(function(item) {
+      var node = document.querySelector('.item[data-id="' + item.id + '"]');
+      if (!node) return;
+
+      var base = Number(node.getAttribute("data-base"));
+      var rank = Number(node.getAttribute("data-rank"));
+      var maxPts = weightedPoints(base, rank);           // possible score
+      var factor = getLevelFactor(node);                 // 0, 0.5, 0.75, 1
+      var earned = roundPoints(maxPts * factor);         // earned points
+      var labelEl = node.querySelector('label.label');
+      var criteriaName = labelEl ? labelEl.textContent.trim() : (item.label || item.id);
+
+      if (opts.scoredOnly && factor === 0) {
+        // Skip items without a selected score when scoredOnly=true
+        return;
+      }
+
+      rows.push({
+        criteria: criteriaName,
+        score: formatPoints(earned),
+        possible: formatPoints(maxPts)
+      });
+    });
+  });
+
+  return rows;
+}
+
+function exportCSV(scoredOnly) {
+  var rows = collectExportRows({ scoredOnly: !!scoredOnly });
+
+  if (!rows.length) {
+    alert("No data to export yet.");
+    return;
+  }
+
+  var header = ["Criteria", "Score", "Possible Score"];
+  var lines = [];
+
+  // Header
+  lines.push(header.map(csvEscape).join(","));
+
+  // Data rows
+  rows.forEach(function(r) {
+    lines.push([r.criteria, r.score, r.possible].map(csvEscape).join(","));
+  });
+
+  var csvContent = lines.join("\r\n");
+  var blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+
+  var a = document.createElement("a");
+  var url = URL.createObjectURL(blob);
+  a.href = url;
+
+  // Filename with date stamp
+  var now = new Date();
+  var y = now.getFullYear();
+  var m = String(now.getMonth() + 1).padStart(2, "0");
+  var d = String(now.getDate()).padStart(2, "0");
+  a.download = "paving-scores_" + y + "-" + m + "-" + d + ".csv";
+
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 
   // ---------------- INIT ----------------
   window.addEventListener("DOMContentLoaded", function() {
     // (your existing init code stays unchanged)
     // ...
+    
+    document.getElementById("exportCsvBtn").addEventListener("click", function () {
+    // Change to true if you want to export ONLY rows that have a score selected (> 0)
+    exportCSV(false);
+    });
+
     document.getElementById("exportBtn").addEventListener("click", exportSummary);
     // ...
+    
   });
 
 
